@@ -1,160 +1,106 @@
-$(document).ready(function() {
-  // Submit message on button click
-  $('.button').on('click',function(){
-    if (app.currentRoom === "NEW ROOM"){
-      app.currentRoom = prompt("What is the name of your new room?");
-    }
+//GLOBAL VARS
+var server = 'https://api.parse.com/1/classes/chatterbox';
+var allMessages = [];
+var allRooms = null;
+var currentRoom = 'All';
+var friends = [];
 
-    var myMessage = $('#message').val();
-    var message = {
-      username: userName,
-      text: myMessage,
-      roomname: app.currentRoom
-    };
-    app.send(message);
-  });
 
-  // Submit message on enter key press
-  $('#message').keypress(function(e) {
-    var key = e.which;
-    if (key === 13) {
-      $('.button').click();
-      this.value = '';
-      return false;
-    }
-  });
-
-  $('select').on( "change", function(){
-    app.currentRoom = this.value;
-    app.displayMostRecent(app.currentRoom);
-    app.roomListUpdate();
-    console.log(app.currentRoom);
-  });
-
-  $(document).on('click','.username', function() {
-    app.friends.push($(this).text());
-    app.friends = _.uniq(app.friends);
-    console.log(app.friends);
-  });
+// MODELS
+var Message = Backbone.Model.extend({
+  initialize: function(messageObj){
+    this.set('message', messageObj.text);
+    this.set('username', messageObj.username);
+    this.set('roomname', messageObj.roomname || 'All');
+  }
+  //message?
 });
 
 
-// entityMap and escapeHtml deal with user input that can cause errors from XSS attacks.
-var entityMap = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': '&quot;',
-  "'": '&#39;',
-  "/": '&#x2F;'
-};
-var escapeHtml = function(string) {
-  return String(string).replace(/[&<>"'\/]/g, function (s) {
-    return entityMap[s];
-  });
-};
 
+// MODEL COLLECTIONS
+var Messages = Backbone.Collection.extend({
+  initialize: function(){
+    this.set('currentRoom','All');
+  },
+  model: Message
+});
 
-//Sets up app object, which contains all variables and methods for chatterbox app.
-var app = {
-  server: 'https://api.parse.com/1/classes/chatterbox',
-  allMessages: null,
-  allRooms: null,
-  currentRoom: 'All',
-  friends: []
-};
+// VIEWS
+var MessageView = Backbone.View.extend({
 
-var search = window.location.search;
-var userName = search.substring(search.lastIndexOf('=')+1);
+  initialize: function() {
 
-//Initializes app (calls fetch).
-app.init = function(){
-  this.fetch();
-};
+  },
 
-//Gets all data from server (first 100 messages only?) and displays 10 most recent messages.
-app.fetch = function() {
-  var context = this;
-  // debugger;
+  entityMap: {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': '&quot;',
+    "'": '&#39;',
+    "/": '&#x2F;'
+  },
+
+  escapeHtml: function(string) {
+    var context = this;
+    return String(string).replace(/[&<>"'\/]/g, function (s) {
+      return context.entityMap[s];
+    })
+  },
+
+  render: function() {
+    var html = [
+      '<div class="chat">',
+        '<span class="username">',
+          this.escapeHtml(this.model.get('username')),
+        '</span>',
+        ': ',
+        '<span class="text">',
+          this.escapeHtml(this.model.get('message')),
+        '</span>',
+      '</div>'
+    ].join('');
+    
+    return this.$el.html(html);
+  }
+});
+
+var MessagesView = Backbone.View.extend({
+  initialize: function() {
+    this.model.on('change:currentRoom', this.render, this)
+  },
+
+  render: function() {
+    this.$el.append(this.model.map(function(message) {
+      return new MessageView({ model: message }).render();
+    }));
+
+    return this.$el;
+  }
+});
+
+//FETCH FUNCTION
+var fetch = function() {
   $.ajax({
-    url: this.server,
+    url: server,
     type: 'GET',
     dataType: 'json',
     success: function(data) {
-      context.allMessages = data.results;
-      //context.roomListUpdate();
-      context.displayMostRecent(app.currentRoom);
-    },
-    error: function(data){
-      console.error('Could not get messages.')
-    }
-  });
+      allMessages = [];
 
-};
+      _.each(data.results, function(item){
+        allMessages.push(new Message(item));
+      });
 
-app.roomListUpdate = function(){
-  $('select > option').remove();
-  this.allRooms = _.uniq(_.pluck(this.allMessages, 'roomname'));
-  $('select').append('<option value="All" id="All">All</option>');
-  $('select').append('<option value="NEW ROOM" id="NEW ROOM">NEW ROOM</option>')
-  for (var i = 0; i < this.allRooms.length; i++) {
-    if (this.allRooms[i] !== undefined && this.allRooms[i] !== '') {
-      $('select').append('<option value=' + escapeHtml(this.allRooms[i]) 
-        + ' id=' + escapeHtml(this.allRooms[i]) + '>' 
-        + escapeHtml(this.allRooms[i]) + '</option>');
-    }
-  }
-  $('#' + app.currentRoom).attr('selected',true);
+      // Add all of these to a new collection:
+      var messages = new Messages(allMessages);
 
-};
+      // Associate a view to the collection:
+      var messagesView = new MessagesView({ model: messages });
 
-app.displayMostRecent = function(room){
-  $('#chats > div').remove();
-  if (room === 'All'){
-    for (var i = 0; i < this.allMessages.length; i++) {
-      app.append(this.allMessages[i]);
-    }
-  }
-  else {
-    for (var i = 0; i < this.allMessages.length; i++) {
-      if(this.allMessages[i].roomname === room){
-        app.append(this.allMessages[i]);
-      }
-    }
-  }
-
-  $('.username').each(function(el) {
-    //debugger;
-    if (app.friends.indexOf($(this).text()) !== -1){
-      $(this).parent().toggleClass('friend');
-    }
-  });
-};
-
-app.append = function(message) {
-  $('#chats').append('<div class="chat"><span  class="username">'
-      + escapeHtml(message.username) + '</span>: <span class="text">' 
-      + escapeHtml(message.text) + '</span></div>');
-
-  // var el = '<div class="chat"><span  class="username">'
-  //     + escapeHtml(message.username) + '</span>: <span class="text';
-
-  // if (app.friends.indexOf(message.username) !== -1) {
-  //   el += ' friend';
-  // }
-
-  // el += '">' + escapeHtml(message.text) + '</span></div>';
-}
-
-// Posts new message to chatterbox
-app.send = function(message){
-  $.ajax({
-    url: this.server,
-    type: 'POST',
-    data: JSON.stringify(message),
-    contentType: 'application/json',
-    success: function(data) {
-      console.log('Message sent, doofus.');
+      // Append it to the page (uncomment this when you are ready):
+      $('#chats').append(messagesView.render());
     },
     error: function(data){
       console.error('Could not get messages.')
@@ -162,8 +108,4 @@ app.send = function(message){
   });
 };
 
-app.init();
-//debugger;
-setInterval(app.fetch.bind(app), 10000);
-
-setTimeout(app.roomListUpdate.bind(app), 3000);
+fetch();
