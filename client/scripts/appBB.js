@@ -137,6 +137,7 @@ var fetch = function() {
       var messagesView = new MessagesView({ model: messages });
 
       // Append it to the page (uncomment this when you are ready):
+      $('.chat').remove();
       $('#chats').append(messagesView.render());
     },
     error: function(data){
@@ -145,4 +146,35 @@ var fetch = function() {
   });
 };
 
+var search = window.location.search;
+var userName = search.substring(search.lastIndexOf('=')+1);
+
+var send = function(message){
+  $.ajax({
+    url: server,
+    type: 'POST',
+    data: JSON.stringify(message),
+    contentType: 'application/json',
+    success: function(data) {
+      console.log('Message sent, doofus.');
+    },
+    error: function(data){
+      console.error('Could not get messages.')
+    }
+  });
+};
+
+$(document).ready(function(){
+  $('.button').on('click',function(){
+    var myMessage = $('#message').val();
+    var message = {
+      username: userName,
+      text: myMessage,
+      roomname: 'All'
+    };
+    send(message);
+  });
+})
+
 fetch();
+setInterval(fetch, 2000);
